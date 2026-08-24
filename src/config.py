@@ -93,7 +93,10 @@ CSV_GENES_ARE_ROWS = True
 # "Linear Projection (Genes -> d_model)" ở đầu Encoder.
 # Batch được tạo bằng cách CẮT CHỈ SỐ trên ma trận đã nằm trong RAM.
 # =====================================================================
-BATCH_SIZE = 128
+# 8-16 là vùng hợp lý cho scRNA-seq: số tế bào thường chỉ vài nghìn, batch to
+# thì mỗi epoch chỉ có dăm bước cập nhật, mô hình gần như không học được gì.
+# Mạng chỉ dùng LayerNorm (không có BatchNorm) nên batch nhỏ hoàn toàn an toàn.
+BATCH_SIZE = 16
 VAL_FRACTION = 0.1        # tỉ lệ tế bào tách ra làm tập kiểm định
 SHUFFLE = True            # xáo trộn tập huấn luyện mỗi epoch
 DROP_LAST = False         # bỏ batch cuối nếu thiếu; bật khi dùng BatchNorm
@@ -129,8 +132,8 @@ PRE_NORM = False
 #
 # Đúng chiến lược 3 bước trong sơ đồ: train VAE trước, rồi mới train GAN.
 # =====================================================================
-VAE_EPOCHS = 100          # số epoch của Bước 1 (chỉ Reconstruction + KL)
-GAN_EPOCHS = 100          # số epoch của Bước 2 (đối kháng)
+VAE_EPOCHS = 3          # số epoch của Bước 1 (chỉ Reconstruction + KL)
+GAN_EPOCHS = 3          # số epoch của Bước 2 (đối kháng)
 LR_G = 1e-3             # tốc độ học của Generator
 LR_D = 1e-4             # tốc độ học của Discriminator; để nhỏ hơn LR_G vì D
                         # rất dễ thắng áp đảo làm gradient đối kháng biến mất
@@ -138,6 +141,21 @@ KL_WEIGHT = 0.1         # trọng số KL sau khi annealing xong
 ADV_WEIGHT = 0.01       # trọng số loss đối kháng trong tổng loss của G
 IMPUTE_SAMPLES = 8      # 1 = dùng z = mu (tiền định); >1 = lấy mẫu để ước
                         # lượng độ bất định của từng giá trị bù khuyết
+
+# =====================================================================
+# THIẾT BỊ TÍNH TOÁN
+#
+# "auto" -> có GPU NVIDIA thì dùng, không thì chạy CPU. Đây là mặc định nên
+#           đổi máy không phải sửa gì.
+# "cuda" -> BẮT BUỘC dùng GPU; không có thì báo lỗi ngay thay vì âm thầm
+#           chạy CPU rồi bạn ngồi chờ vài tiếng mới biết.
+# "cpu"  -> ép chạy CPU dù có GPU.
+#
+# Cả ma trận X và M được đưa lên GPU MỘT LẦN lúc khởi động; sau đó mỗi batch
+# chỉ là phép cắt chỉ số ngay trên GPU, không có lần copy nào giữa các epoch.
+# Đây chính là cái lợi của việc bỏ DataLoader.
+# =====================================================================
+DEVICE = "auto"
 
 # =====================================================================
 # HỆ THỐNG
@@ -183,6 +201,22 @@ def apply(params):
     for name, value in params.items():
         if name.isupper() and not name.startswith("VALID_") and hasattr(module, name):
             setattr(module, name, value)
+
+
+def resolve_device():
+    """Đổi DEVICE thành một torch.device cụ thể. Ném lỗi nếu ép cuda mà không có."""
+    import torch
+
+    want = str(DEVICE).lower()
+    if want == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if want.startswith("cuda") and not torch.cuda.is_available():
+        raise RuntimeError(
+            f'DEVICE = "{DEVICE}" nhưng PyTorch không thấy GPU nào. '
+            "Kiểm tra driver NVIDIA và bản PyTorch đã cài (cpuonly hay pytorch-cuda). "
+            'Đặt DEVICE = "auto" để tự lùi về CPU.'
+        )
+    return torch.device(want)
 
 
 def validate():
