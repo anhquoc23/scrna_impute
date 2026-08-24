@@ -300,9 +300,7 @@ def apply_cli_to_config(args):
 def main(args):
     t0 = time.time()
     apply_cli_to_config(args)
-    torch.manual_seed(int(config.RANDOM_STATE))
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(int(config.RANDOM_STATE))
+    config.set_seed()
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
  
@@ -326,16 +324,18 @@ def main(args):
  
     # ---- KHỐI 3: huấn luyện -----------------------------------------
     print(f"\n########## KHỐI 3: Huấn luyện ##########")
+    config.set_seed()   # cố định RNG ngay trước khi train, độc lập K1/K2
     gen, disc = build_models(data)
     opt_g, opt_d = build_optimizers(gen, disc)
     print_model_info(gen, disc)
- 
+
     history = trainer.train_vae(gen, opt_g, data, idx_train, idx_val)
     history += trainer.train_gan(gen, disc, opt_g, opt_d, data, idx_train, idx_val,
                                epoch_offset=int(config.VAE_EPOCHS))
- 
+
     # ---- KHỐI 4: bù khuyết ------------------------------------------
     print(f"\n########## KHỐI 4: Bù khuyết ##########")
+    config.set_seed()   # cố định RNG ngay trước khi impute, độc lập số epoch train
     x_out, std_out = impute_matrix(gen, data)
  
     path_x = write_csv(x_out, cell_names, gene_names, outdir / "X_imputed.csv")

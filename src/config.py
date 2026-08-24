@@ -219,6 +219,32 @@ def resolve_device():
     return torch.device(want)
 
 
+def set_seed(seed=None):
+    """Đặt lại seed cho random, numpy VÀ torch (cả CPU lẫn CUDA).
+
+    Gọi lại hàm này ngay trước mỗi giai đoạn (train VAE, train GAN, impute)
+    để giai đoạn đó tái lập được ĐỘC LẬP với số lần lấy mẫu ngẫu nhiên đã
+    xảy ra ở các bước trước (K-means, EM, giai đoạn train trước đó, ...).
+    seed = None thì lấy config.RANDOM_STATE.
+    """
+    import random
+
+    import numpy as np
+    import torch
+
+    seed = int(RANDOM_STATE if seed is None else seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    # tắt các thuật toán không tất định của cuDNN -> cùng seed thì cùng kết
+    # quả trên GPU, đổi lại tốc độ có thể chậm hơn một chút.
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    return seed
+
+
 def validate():
     """Kiểm tra tính hợp lệ của bộ tham số HIỆN HÀNH. Ném ValueError nếu sai."""
     if ZERO_DETECTION not in VALID_ZERO_DETECTION:
